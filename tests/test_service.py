@@ -68,8 +68,66 @@ class MielConsultationTests(unittest.TestCase):
         page = client.get("/consultation?utm_source=qr")
         health = client.get("/health")
         self.assertEqual(200, page.status_code)
-        self.assertIn("Выберите удобное время", page.text)
+        self.assertIn("Выберите удобное время встречи", page.text)
+        self.assertIn("Персональное приглашение", page.text)
+        self.assertIn('src="data:image/png;base64,', page.text)
+        self.assertIn("Стратегическая консультация", page.text)
+        self.assertIn("Для участниц женского бизнес-клуба", page.text)
+        self.assertIn("«ICONA» Марины Плагиной", page.text)
+        self.assertIn("с экспертом рынка недвижимости ГК «МИЭЛЬ»", page.text)
+        self.assertIn("сохранение капитала и защиту интересов семьи", page.text)
+        self.assertIn("Ваше время:", page.text)
+        self.assertIn("const bookingEndpoint=", page.text)
+        self.assertIn("Не удалось связаться с сервисом записи", page.text)
+        self.assertIn("Подтвердить встречу", page.text)
+        self.assertIn("Не хотите оставлять телефон?", page.text)
+        self.assertIn('href="https://t.me/Vikki_brn"', page.text)
+        self.assertIn('rel="noopener noreferrer"', page.text)
+        self.assertEqual(1, page.text.count('href="https://t.me/Vikki_brn"'))
+        self.assertNotIn("МЕСТО ДЛЯ ОФИЦИАЛЬНОГО ЛОГОТИПА", page.text)
+        self.assertNotIn("Забронировать встречу", page.text)
+        self.assertNotIn("Выберите удобное время для личной встречи", page.text)
+        self.assertIn("iso:'2026-08-04'", page.text)
+        self.assertIn("iso:'2026-08-07'", page.text)
+        self.assertEqual(4, page.text.count("iso:'2026-08-"))
+        self.assertNotIn("iso:'2026-07-30'", page.text)
         self.assertEqual({"status": "ok", "service": "miel-consultation"}, health.json())
+
+    def test_booking_endpoint_allows_local_preview_preflight(self) -> None:
+        client = TestClient(app)
+        for origin in ("null", "http://127.0.0.1:5500", "http://localhost:5173"):
+            with self.subTest(origin=origin):
+                response = client.options(
+                    "/api/consultation/book",
+                    headers={
+                        "Origin": origin,
+                        "Access-Control-Request-Method": "POST",
+                        "Access-Control-Request-Headers": "content-type",
+                    },
+                )
+                self.assertEqual(200, response.status_code)
+                self.assertEqual(
+                    origin,
+                    response.headers["access-control-allow-origin"],
+                )
+
+    def test_booking_endpoint_rejects_external_preflight(self) -> None:
+        client = TestClient(app)
+        response = client.options(
+            "/api/consultation/book",
+            headers={
+                "Origin": "https://untrusted.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        self.assertEqual(400, response.status_code)
+        self.assertNotIn("access-control-allow-origin", response.headers)
+
+    def test_static_assets_are_mounted(self) -> None:
+        client = TestClient(app)
+        response = client.get("/static/images/.gitkeep")
+        self.assertEqual(200, response.status_code)
 
     @patch("app.main.IntrumLeadClient")
     def test_booking_endpoint_returns_201(self, intrum_client) -> None:
@@ -80,7 +138,7 @@ class MielConsultationTests(unittest.TestCase):
             json={
                 "name": "Анна",
                 "phone": "89001234567",
-                "meeting_date": "2026-07-30",
+                "meeting_date": "2026-08-04",
                 "meeting_time": "15:30",
                 "confirmation_method": "call",
                 "flow": "slot",
@@ -88,8 +146,47 @@ class MielConsultationTests(unittest.TestCase):
         )
         self.assertEqual(201, response.status_code)
         self.assertTrue(response.json()["request_created"])
+        booking = intrum_client.return_value.submit.call_args.args[0]
+        self.assertEqual(date(2026, 8, 4), booking.meeting_date)
+
+    @patch("app.main.IntrumLeadClient")
+    def test_second_slot_does_not_reuse_previous_date(self, intrum_client) -> None:
+        intrum_client.return_value.submit.return_value = {"customer": 10, "request": 28}
+        client = TestClient(app)
+        response = client.post(
+            "/api/consultation/book",
+            json={
+                "name": "Марина",
+                "phone": "89005556677",
+                "meeting_date": "2026-08-07",
+                "meeting_time": "16:00",
+                "confirmation_method": "messenger",
+                "flow": "slot",
+            },
+        )
+        self.assertEqual(201, response.status_code)
+        booking = intrum_client.return_value.submit.call_args.args[0]
+        self.assertEqual(date(2026, 8, 7), booking.meeting_date)
+        self.assertEqual("16:00", booking.meeting_time)
+
+    @patch("app.main.IntrumLeadClient")
+    def test_individual_flow_does_not_require_slot(self, intrum_client) -> None:
+        intrum_client.return_value.submit.return_value = {"customer": 11, "request": 29}
+        client = TestClient(app)
+        response = client.post(
+            "/api/consultation/book",
+            json={
+                "name": "Ольга",
+                "phone": "89001112233",
+                "confirmation_method": "call",
+                "flow": "individual",
+            },
+        )
+        self.assertEqual(201, response.status_code)
+        booking = intrum_client.return_value.submit.call_args.args[0]
+        self.assertIsNone(booking.meeting_date)
+        self.assertIsNone(booking.meeting_time)
 
 
 if __name__ == "__main__":
     unittest.main()
-

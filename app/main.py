@@ -4,7 +4,9 @@ import logging
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.intrum import DEFAULT_UTM, IntrumConfigurationError, IntrumLeadClient, IntrumResponseError
@@ -14,6 +16,14 @@ from app.schemas import BookingAccepted, ConsultationBooking
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, docs_url=None, redoc_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["null"],
+    allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
 logger = logging.getLogger(__name__)
 rate_limiter = RateLimiter(settings.rate_limit_requests, settings.rate_limit_window_seconds)
 
@@ -62,4 +72,3 @@ def book_consultation(booking: ConsultationBooking, request: Request) -> Booking
         meeting_time=booking.meeting_time,
         flow=booking.flow,
     )
-
