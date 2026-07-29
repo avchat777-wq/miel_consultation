@@ -20,14 +20,21 @@ class MielConsultationTests(unittest.TestCase):
         encoded = php_form_encode({"params": {"customer": {"phone": [{"phone": "+79001234567"}]}}})
         self.assertEqual("+79001234567", encoded["params[customer][phone][0][phone]"])
 
-    def test_phone_is_normalized(self) -> None:
-        booking = ConsultationBooking(
-            name="Анна",
-            phone="8 900 123-45-67",
-            meeting_date=date(2026, 7, 30),
-            meeting_time="15:30",
-        )
-        self.assertEqual("+79001234567", booking.phone)
+    def test_russian_phone_variants_are_normalized(self) -> None:
+        for raw_phone in (
+            "89992245252",
+            "79992245252",
+            "+79992245252",
+            "9992245252",
+        ):
+            with self.subTest(raw_phone=raw_phone):
+                booking = ConsultationBooking(
+                    name="Анна",
+                    phone=raw_phone,
+                    meeting_date=date(2026, 7, 30),
+                    meeting_time="15:30",
+                )
+                self.assertEqual("+79992245252", booking.phone)
 
     def test_slot_requires_date_and_time(self) -> None:
         with self.assertRaises(ValueError):
@@ -101,6 +108,12 @@ class MielConsultationTests(unittest.TestCase):
         self.assertIn("successDialog.addEventListener('close',resetBookingState)", page.text)
         self.assertIn("individualForm.querySelector", page.text)
         self.assertIn("disabled=false", page.text)
+        self.assertEqual(2, page.text.count('value="+7 ___ ___-__-__"'))
+        self.assertEqual(2, page.text.count('inputmode="tel"'))
+        self.assertEqual(2, page.text.count('autocomplete="tel"'))
+        self.assertIn("function nationalPhoneDigits", page.text)
+        self.assertIn("function installPhoneMask", page.text)
+        self.assertIn("phone:'7'+phoneDigits", page.text)
         self.assertEqual({"status": "ok", "service": "miel-consultation"}, health.json())
 
     def test_invalid_phone_returns_structured_validation_error(self) -> None:
