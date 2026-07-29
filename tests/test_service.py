@@ -79,6 +79,9 @@ class MielConsultationTests(unittest.TestCase):
         self.assertIn("Ваше время:", page.text)
         self.assertIn("const bookingEndpoint=", page.text)
         self.assertIn("Не удалось связаться с сервисом записи", page.text)
+        self.assertIn("Введите корректный номер телефона", page.text)
+        self.assertIn("Проверьте имя", page.text)
+        self.assertNotIn("throw new Error(result.detail", page.text)
         self.assertIn("Подтвердить встречу", page.text)
         self.assertIn("Не хотите оставлять телефон?", page.text)
         self.assertIn('href="https://t.me/Vikki_brn"', page.text)
@@ -91,7 +94,31 @@ class MielConsultationTests(unittest.TestCase):
         self.assertIn("iso:'2026-08-07'", page.text)
         self.assertEqual(4, page.text.count("iso:'2026-08-"))
         self.assertNotIn("iso:'2026-07-30'", page.text)
+        self.assertIn('id="success-close"', page.text)
+        self.assertIn("Запрос отправлен", page.text)
+        self.assertIn("calendarAdd.hidden=!isSlot", page.text)
+        self.assertIn("setTimeout(closeSuccess,750)", page.text)
+        self.assertIn("successDialog.addEventListener('close',resetBookingState)", page.text)
+        self.assertIn("individualForm.querySelector", page.text)
+        self.assertIn("disabled=false", page.text)
         self.assertEqual({"status": "ok", "service": "miel-consultation"}, health.json())
+
+    def test_invalid_phone_returns_structured_validation_error(self) -> None:
+        client = TestClient(app)
+        response = client.post(
+            "/api/consultation/book",
+            json={
+                "name": "Анна",
+                "phone": "22222",
+                "meeting_date": "2026-08-04",
+                "meeting_time": "12:00",
+                "confirmation_method": "call",
+                "flow": "slot",
+            },
+        )
+        self.assertEqual(422, response.status_code)
+        detail = response.json()["detail"]
+        self.assertTrue(any(error["loc"][-1] == "phone" for error in detail))
 
     def test_booking_endpoint_allows_local_preview_preflight(self) -> None:
         client = TestClient(app)
