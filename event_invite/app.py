@@ -1,5 +1,6 @@
 """Standalone MIEL event invitation. PII collection disabled unless explicitly enabled."""
 import os
+import hashlib
 import hmac
 import re
 import sqlite3
@@ -19,7 +20,7 @@ NETHOUSE_URL = ("https://events.nethouse.ru/form/173681/"
     "&utm_medium=referral&utm_source=favorit")
 DB_FILE = Path(os.getenv("EVENT_INVITE_DB", "event_invite/invites.sqlite3"))
 COLLECTION_ENABLED = os.getenv("EVENT_INVITE_COLLECTION_ENABLED", "false").lower() == "true"
-CONSENT_VERSION = "draft-2026-10-19"
+CONSENT_VERSION = "draft-2026-10-19-v2"
 RETENTION_UNTIL = "2026-12-07"
 LOCAL_TZ = ZoneInfo("Asia/Barnaul")
 
@@ -44,8 +45,12 @@ def connect():
     connection.execute("""CREATE TABLE IF NOT EXISTS invitations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         phone TEXT NOT NULL, created_at TEXT NOT NULL,
-        consent_version TEXT NOT NULL, retention_until TEXT NOT NULL
+        consent_version TEXT NOT NULL, retention_until TEXT NOT NULL,
+        consent_sha256 TEXT NOT NULL DEFAULT ''
     )""")
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(invitations)")}
+    if "consent_sha256" not in columns:
+        connection.execute("ALTER TABLE invitations ADD COLUMN consent_sha256 TEXT NOT NULL DEFAULT ''")
     return connection
 
 
@@ -184,9 +189,10 @@ async def register(request: Request):
         ).fetchone()
         if not duplicate:
             db.execute(
-                "INSERT INTO invitations (phone,created_at,consent_version,retention_until)"
-                " VALUES (?,?,?,?)",
-                ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL),
+                "INSERT INTO invitations (phone,created_at,consent_version,retention_until,consent_sha256)"
+                " VALUES (?,?,?,?,?)",
+                ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL,
+                 hashlib.sha256(consent().body).hexdigest()),
             )
     return RedirectResponse(NETHOUSE_URL, status_code=303)
 
