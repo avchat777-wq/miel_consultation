@@ -25,6 +25,21 @@ class InviteFlowTests(unittest.TestCase):
         self.client = TestClient(self.mod.app)
         self.addCleanup(self.client.close)
 
+    def test_admin_contacts_fail_closed_and_require_token(self):
+        url = "/invite/admin/contacts"
+        disabled = self.client.get(url)
+        self.assertEqual(disabled.status_code, 503)
+        self.assertEqual(disabled.headers.get("cache-control"), "no-store")
+        token = "a" * 40
+        with patch.dict(os.environ, {"EVENT_INVITE_ADMIN_TOKEN": token}):
+            self.assertEqual(self.client.get(url).status_code, 403)
+            self.assertEqual(self.client.get(url, headers={
+                "X-Invite-Admin-Token": "wrong"}).status_code, 403)
+            good = self.client.get(url, headers={"X-Invite-Admin-Token": token})
+        self.assertEqual(good.status_code, 200)
+        self.assertEqual(good.json(), {"count": 0, "contacts": []})
+        self.assertEqual(good.headers.get("cache-control"), "no-store")
+
     def test_disabled_collection_fails_closed(self):
         response = self.client.get("/invite/")
         self.assertEqual(response.status_code, 200)
