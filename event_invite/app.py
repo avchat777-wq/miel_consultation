@@ -2,6 +2,7 @@
 import os
 import re
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo
 from html import escape
@@ -29,7 +30,7 @@ def collection_open():
 def purge_expired():
     """Delete expired rows when the app is accessed; scheduled cleanup is still required."""
     if DB_FILE.exists():
-        with connect() as db:
+        with closing(connect()) as db, db:
             db.execute("DELETE FROM invitations WHERE retention_until < ?",
                        (datetime.now(LOCAL_TZ).date().isoformat(),))
             db.commit()
@@ -134,7 +135,7 @@ async def register(request: Request):
         digits = "7" + digits[1:]
     if not (len(digits) == 11 and digits[0] == "7"):
         return HTMLResponse("Укажите российский номер телефона", status_code=422)
-    with connect() as db:
+    with closing(connect()) as db, db:
         db.execute("INSERT INTO invitations (phone,created_at,consent_version,retention_until)"
                    " VALUES (?,?,?,?)",
                    ("+" + digits, datetime.now(timezone.utc).isoformat(), CONSENT_VERSION, RETENTION_UNTIL))
