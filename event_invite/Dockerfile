@@ -6,4 +6,4 @@ COPY event_invite /app/event_invite
 RUN mkdir -p /data && chown -R 10001:10001 /data /app
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "event_invite.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "chmod 700 /data && exec uvicorn event_invite.app:app --host 0.0.0.0 --port 8000"]
