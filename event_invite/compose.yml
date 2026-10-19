@@ -1,0 +1,23 @@
+services:
+  event-invite:
+    build:
+      context: ..
+      dockerfile: event_invite/Dockerfile
+    container_name: miel-event-invite
+    restart: unless-stopped
+    environment:
+      EVENT_INVITE_COLLECTION_ENABLED: "false"
+      EVENT_INVITE_DB: /data/invites.sqlite3
+    ports:
+      - "127.0.0.1:8070:8000"
+    volumes:
+      - invite_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  invite_data:
