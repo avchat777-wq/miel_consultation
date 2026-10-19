@@ -48,6 +48,19 @@ class InviteFlowTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 422)
             self.assertFalse(Path(self.tmp.name, "test.sqlite3").exists())
 
+    def test_repeat_submission_does_not_duplicate_contact(self):
+        payload = {"phone": "+7 999 000 00 00", "consent": "yes"}
+        with patch.object(self.mod, "COLLECTION_ENABLED", True):
+            responses = [
+                self.client.post("/invite/register", data=payload, follow_redirects=False)
+                for _ in range(2)
+            ]
+        self.assertTrue(all(r.status_code == 303 for r in responses))
+        import sqlite3
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
+            count = db.execute("SELECT COUNT(*) FROM invitations").fetchone()[0]
+        self.assertEqual(count, 1)
+
     def test_success_saves_before_redirect(self):
         with patch.object(self.mod, "COLLECTION_ENABLED", True):
             response = self.client.post("/invite/register", data={
