@@ -1,5 +1,6 @@
 """Regression tests for the isolated invitation flow (no real customer data)."""
 import importlib
+from contextlib import closing
 import os
 import tempfile
 import unittest
@@ -55,7 +56,7 @@ class InviteFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], self.mod.NETHOUSE_URL)
         import sqlite3
-        with sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3")) as db:
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
             record = db.execute(
                 "SELECT phone, retention_until FROM invitations"
             ).fetchone()
