@@ -61,6 +61,22 @@ class InviteFlowTests(unittest.TestCase):
             count = db.execute("SELECT COUNT(*) FROM invitations").fetchone()[0]
         self.assertEqual(count, 1)
 
+    def test_expired_records_are_removed_on_request(self):
+        import sqlite3
+        db_path = str(Path(self.tmp.name) / "test.sqlite3")
+        with closing(self.mod.connect()) as db:
+            db.execute(
+                "INSERT INTO invitations (phone, created_at, consent_version, retention_until) "
+                "VALUES (?, ?, ?, ?)",
+                ("+79990000000", "2026-10-01T00:00:00+00:00", "test", "2026-10-01"),
+            )
+            db.commit()
+        response = self.client.get("/invite/")
+        self.assertEqual(response.status_code, 200)
+        with closing(sqlite3.connect(db_path)) as db:
+            count = db.execute("SELECT COUNT(*) FROM invitations").fetchone()[0]
+        self.assertEqual(count, 0)
+
     def test_success_saves_before_redirect(self):
         with patch.object(self.mod, "COLLECTION_ENABLED", True):
             response = self.client.post("/invite/register", data={
