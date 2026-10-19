@@ -1,9 +1,9 @@
 """Standalone MIEL event invitation. PII collection disabled unless explicitly enabled."""
 import os
 import re
-import secrets
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+from zoneinfo import ZoneInfo
 from html import escape
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -19,6 +19,21 @@ DB_FILE = Path(os.getenv("EVENT_INVITE_DB", "event_invite/invites.sqlite3"))
 COLLECTION_ENABLED = os.getenv("EVENT_INVITE_COLLECTION_ENABLED", "false").lower() == "true"
 CONSENT_VERSION = "draft-2026-10-19"
 RETENTION_UNTIL = "2026-12-07"
+LOCAL_TZ = ZoneInfo("Asia/Barnaul")
+
+
+def collection_open():
+    return COLLECTION_ENABLED and datetime.now(LOCAL_TZ).date() <= date.fromisoformat(RETENTION_UNTIL)
+
+
+def purge_expired():
+    """Delete expired rows when the app is accessed; scheduled cleanup is still required."""
+    if DB_FILE.exists():
+        with connect() as db:
+            db.execute("DELETE FROM invitations WHERE retention_until < ?",
+                       (datetime.now(LOCAL_TZ).date().isoformat(),))
+            db.commit()
+
 
 
 def connect():
@@ -34,7 +49,7 @@ def connect():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "collection_enabled": COLLECTION_ENABLED}
+    return {"status": "ok", "collection_enabled": collection_open()}
 
 
 def page(inner: str):
@@ -57,7 +72,8 @@ small{color:#666}.notice{background:#fff5e9;padding:12px;border-radius:8px}
 
 @app.get("/invite/", response_class=HTMLResponse)
 def invite():
-    if not COLLECTION_ENABLED:
+    purge_expired()
+    if not collection_open():
         return page('<p class="notice">Тестовая страница: сбор телефонов выключен.</p>'
             '<a class="action" href="' + escape(NETHOUSE_URL, quote=True)
             + '">Перейти к регистрации</a>')
@@ -101,7 +117,8 @@ def privacy():
 
 @app.post("/invite/register")
 async def register(request: Request):
-    if not COLLECTION_ENABLED:
+    purge_expired()
+    if not collection_open():
         return HTMLResponse("Приём заявок выключен", status_code=503)
     if request.headers.get("content-type", "").split(";")[0].strip() != "application/x-www-form-urlencoded":
         return HTMLResponse("Неверный формат формы", status_code=415)
