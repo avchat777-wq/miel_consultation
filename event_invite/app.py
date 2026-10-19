@@ -35,6 +35,6 @@ small{display:block;margin-top:18px;color:#666}
 </style></head><body><main><h1>День недвижимости</h1>
 <p>Приглашение от агентства недвижимости МИЭЛЬ.</p>
 <p>Для участия заполните форму организатора мероприятия.</p>
-<a href="__NETHOUSE_URL__" rel="noopener noreferrer" target="_blank">Перейти к регистрации</a>
+<a href="__NETHOUSE_URL__">Перейти к регистрации</a>
 <small>Тестовый макет. Телефон и другие данные здесь не собираются.</small>
 </main></body></html>""".replace("__NETHOUSE_URL__", NETHOUSE_URL)
