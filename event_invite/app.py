@@ -3,7 +3,7 @@ import os
 import re
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from zoneinfo import ZoneInfo
 from html import escape
 from pathlib import Path
@@ -135,9 +135,19 @@ async def register(request: Request):
         digits = "7" + digits[1:]
     if not (len(digits) == 11 and digits[0] == "7"):
         return HTMLResponse("Укажите российский номер телефона", status_code=422)
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(minutes=10)).isoformat()
     with closing(connect()) as db, db:
-        db.execute("INSERT INTO invitations (phone,created_at,consent_version,retention_until)"
-                   " VALUES (?,?,?,?)",
-                   ("+" + digits, datetime.now(timezone.utc).isoformat(), CONSENT_VERSION, RETENTION_UNTIL))
-        db.commit()
+        # Atomically serialize the check and insert across simultaneous requests.
+        db.execute("BEGIN IMMEDIATE")
+        duplicate = db.execute(
+            "SELECT 1 FROM invitations WHERE phone = ? AND created_at >= ? LIMIT 1",
+            ("+" + digits, cutoff),
+        ).fetchone()
+        if not duplicate:
+            db.execute(
+                "INSERT INTO invitations (phone,created_at,consent_version,retention_until)"
+                " VALUES (?,?,?,?)",
+                ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL),
+            )
     return RedirectResponse(NETHOUSE_URL, status_code=303)
