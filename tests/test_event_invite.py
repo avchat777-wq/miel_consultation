@@ -131,6 +131,44 @@ class InviteFlowTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(record, ("+79990000000", "2026-12-07"))
 
+    def test_consent_fingerprint_matches_displayed_document(self):
+        import hashlib
+        import sqlite3
+        with patch.object(self.mod, "COLLECTION_ENABLED", True):
+            response = self.client.post("/invite/register", data={
+                "phone": "+79990000000", "consent": "yes"
+            }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
+            version, digest = db.execute(
+                "SELECT consent_version, consent_sha256 FROM invitations"
+            ).fetchone()
+        self.assertEqual(version, self.mod.CONSENT_VERSION)
+        self.assertEqual(digest, hashlib.sha256(
+            self.client.get("/invite/consent").content
+        ).hexdigest())
+
+    def test_existing_sqlite_schema_migrates_without_losing_rows(self):
+        import sqlite3
+        db_path = str(Path(self.tmp.name) / "test.sqlite3")
+        with sqlite3.connect(db_path) as db:
+            db.execute("""CREATE TABLE invitations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL, created_at TEXT NOT NULL,
+                consent_version TEXT NOT NULL, retention_until TEXT NOT NULL
+            )""")
+            db.execute(
+                "INSERT INTO invitations (phone,created_at,consent_version,retention_until) "
+                "VALUES (?,?,?,?)",
+                ("+79990000000", "2026-10-01T00:00:00+00:00", "old", "2026-12-07")
+            )
+        with closing(self.mod.connect()) as db:
+            row = db.execute(
+                "SELECT phone,consent_sha256 FROM invitations"
+            ).fetchone()
+        self.assertEqual(row, ("+79990000000", ""))
+
+
 
 if __name__ == "__main__":
     unittest.main()
