@@ -40,6 +40,31 @@ class InviteFlowTests(unittest.TestCase):
         self.assertEqual(good.json(), {"count": 0, "contacts": []})
         self.assertEqual(good.headers.get("cache-control"), "no-store")
 
+    def test_admin_contacts_do_not_leak_without_valid_token(self):
+        from datetime import datetime, timezone
+        token = "b" * 40
+        phone = "+79990000000"
+        with closing(self.mod.connect()) as db:
+            db.execute(
+                "INSERT INTO invitations (phone, created_at, consent_version, retention_until) "
+                "VALUES (?, ?, ?, ?)",
+                (phone, datetime.now(timezone.utc).isoformat(), "test", "2026-12-07"),
+            )
+            db.commit()
+        url = "/invite/admin/contacts"
+        with patch.dict(os.environ, {"EVENT_INVITE_ADMIN_TOKEN": token}):
+            unauthorized = self.client.get(url)
+            invalid = self.client.get(url, headers={"X-Invite-Admin-Token": "wrong"})
+            authorized = self.client.get(
+                url, headers={"X-Invite-Admin-Token": token}
+            )
+        for response in (unauthorized, invalid):
+            self.assertEqual(response.status_code, 403)
+            self.assertNotIn(phone, response.text)
+        self.assertEqual(authorized.status_code, 200)
+        self.assertEqual(authorized.json()["count"], 1)
+        self.assertEqual(authorized.json()["contacts"][0]["phone"], phone)
+
     def test_disabled_collection_fails_closed(self):
         response = self.client.get("/invite/")
         self.assertEqual(response.status_code, 200)
