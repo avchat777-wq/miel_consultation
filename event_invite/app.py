@@ -20,7 +20,7 @@ NETHOUSE_URL = ("https://events.nethouse.ru/form/173681/"
     "&utm_medium=referral&utm_source=favorit")
 DB_FILE = Path(os.getenv("EVENT_INVITE_DB", "event_invite/invites.sqlite3"))
 COLLECTION_ENABLED = os.getenv("EVENT_INVITE_COLLECTION_ENABLED", "false").lower() == "true"
-CONSENT_VERSION = "draft-2026-10-19-v2"
+CONSENT_VERSION = "2026-10-19-v1"
 RETENTION_UNTIL = "2026-12-07"
 LOCAL_TZ = ZoneInfo("Asia/Barnaul")
 
@@ -113,8 +113,7 @@ def consent():
 <p>После перехода на сайт организатора мероприятия регистрация
 осуществляется самостоятельно. Обработка данных организатором
 регулируется его собственными документами.</p>
-<p><small>Проект документа. Требуется окончательная юридическая проверка
-перед включением сбора персональных данных.</small></p>""")
+""")
 
 
 @app.get("/invite/privacy")
@@ -155,8 +154,7 @@ def privacy():
 <h3>8. Защита персональных данных</h3>
 <p>Оператор применяет организационные и технические меры по ограничению
 несанкционированного доступа к персональным данным.</p>
-<p><small>Проект документа для страницы приглашения. Не заменяет общую
-политику оператора; необходима юридическая проверка до запуска.</small></p>""")
+""")
 
 
 @app.post("/invite/register")
