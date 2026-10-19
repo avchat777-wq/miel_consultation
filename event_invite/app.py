@@ -1,5 +1,6 @@
 """Standalone MIEL event invitation. PII collection disabled unless explicitly enabled."""
 import os
+import hmac
 import re
 import sqlite3
 from contextlib import closing
@@ -10,7 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 app = FastAPI(title="MIEL Event Invite", docs_url=None, redoc_url=None)
 NETHOUSE_URL = ("https://events.nethouse.ru/form/173681/"
@@ -151,3 +152,29 @@ async def register(request: Request):
                 ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL),
             )
     return RedirectResponse(NETHOUSE_URL, status_code=303)
+
+
+@app.get("/invite/admin/contacts")
+def admin_contacts(request: Request):
+    """Read-only report. Fail closed when no long server-side token is configured."""
+    expected = os.getenv("EVENT_INVITE_ADMIN_TOKEN", "")
+    if len(expected) < 32:
+        return JSONResponse({"detail": "Report disabled"}, status_code=503,
+                            headers={"Cache-Control": "no-store"})
+    supplied = request.headers.get("X-Invite-Admin-Token", "")
+    if not hmac.compare_digest(supplied, expected):
+        return JSONResponse({"detail": "Forbidden"}, status_code=403,
+                            headers={"Cache-Control": "no-store"})
+    purge_expired()
+    if not DB_FILE.exists():
+        contacts = []
+    else:
+        with closing(connect()) as db:
+            contacts = [
+                {"id": row[0], "phone": row[1], "created_at": row[2]}
+                for row in db.execute(
+                    "SELECT id, phone, created_at FROM invitations ORDER BY id DESC"
+                ).fetchall()
+            ]
+    return JSONResponse({"count": len(contacts), "contacts": contacts},
+                        headers={"Cache-Control": "no-store"})
