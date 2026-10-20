@@ -148,6 +148,51 @@ class InviteFlowTests(unittest.TestCase):
             self.client.get("/invite/consent").content
         ).hexdigest())
 
+    def test_personal_agent_link_is_saved_and_reported(self):
+        import sqlite3
+        token = "c" * 40
+        with patch.object(self.mod, "COLLECTION_ENABLED", True):
+            page = self.client.get("/invite/?agent_id=603")
+            self.assertEqual(page.status_code, 200)
+            self.assertIn('name="agent_id" value="603"', page.text)
+            response = self.client.post("/invite/register", data={
+                "phone": "+79990000000",
+                "consent": "yes",
+                "agent_id": "603",
+            }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
+            row = db.execute(
+                "SELECT agent_id, agent_name FROM invitations"
+            ).fetchone()
+        self.assertEqual(row, ("603", "Гехт Евгений"))
+        with patch.dict(os.environ, {"EVENT_INVITE_ADMIN_TOKEN": token}):
+            report = self.client.get(
+                "/invite/admin/contacts",
+                headers={"X-Invite-Admin-Token": token},
+            )
+        self.assertEqual(report.status_code, 200)
+        contact = report.json()["contacts"][0]
+        self.assertEqual(contact["agent_id"], "603")
+        self.assertEqual(contact["agent_name"], "Гехт Евгений")
+
+    def test_unknown_agent_id_is_ignored(self):
+        import sqlite3
+        with patch.object(self.mod, "COLLECTION_ENABLED", True):
+            page = self.client.get("/invite/?agent_id=999999")
+            self.assertNotIn('name="agent_id"', page.text)
+            response = self.client.post("/invite/register", data={
+                "phone": "+79990000000",
+                "consent": "yes",
+                "agent_id": "999999",
+            }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
+            row = db.execute(
+                "SELECT agent_id, agent_name FROM invitations"
+            ).fetchone()
+        self.assertEqual(row, ("", ""))
+
     def test_existing_sqlite_schema_migrates_without_losing_rows(self):
         import sqlite3
         db_path = str(Path(self.tmp.name) / "test.sqlite3")
@@ -164,9 +209,9 @@ class InviteFlowTests(unittest.TestCase):
             )
         with closing(self.mod.connect()) as db:
             row = db.execute(
-                "SELECT phone,consent_sha256 FROM invitations"
+                "SELECT phone,consent_sha256,agent_id,agent_name FROM invitations"
             ).fetchone()
-        self.assertEqual(row, ("+79990000000", ""))
+        self.assertEqual(row, ("+79990000000", "", "", ""))
 
 
 
