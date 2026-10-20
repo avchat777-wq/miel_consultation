@@ -63,7 +63,12 @@ def page(inner: str):
     return HTMLResponse("""<!doctype html><html lang="ru"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>День недвижимости — МИЭЛЬ</title><style>
+<title>День недвижимости — регистрация и билет</title>
+<meta name="description" content="Перейдите по ссылке, зарегистрируйтесь и получите билет на мероприятие «День недвижимости».">
+<meta property="og:title" content="День недвижимости — регистрация и билет">
+<meta property="og:description" content="Перейдите по ссылке, зарегистрируйтесь и получите билет на мероприятие «День недвижимости».">
+<meta property="og:type" content="website">
+<style>
 body{margin:0;background:#f6f6f7;font:16px system-ui,Arial,sans-serif;color:#242424}
 main{max-width:440px;margin:6vh auto;background:white;padding:28px;
 border-radius:16px;box-shadow:0 4px 22px #0001}
