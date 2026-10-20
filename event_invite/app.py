@@ -15,9 +15,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 app = FastAPI(title="MIEL Event Invite", docs_url=None, redoc_url=None)
-NETHOUSE_URL = ("https://events.nethouse.ru/form/173681/"
-    "?utm_campaign=den_nedvizhimosti_0711&utm_content=website"
-    "&utm_medium=referral&utm_source=favorit")
+NETHOUSE_URL = ("https://events.nethouse.ru/buy_tickets/173681"
+    "?utm_source=miel&utm_medium=referral"
+    "&utm_campaign=den_nedvizhimosti_0711&utm_content=website")
 DB_FILE = Path(os.getenv("EVENT_INVITE_DB", "event_invite/invites.sqlite3"))
 COLLECTION_ENABLED = os.getenv("EVENT_INVITE_COLLECTION_ENABLED", "false").lower() == "true"
 CONSENT_VERSION = "2026-10-19-v1"
