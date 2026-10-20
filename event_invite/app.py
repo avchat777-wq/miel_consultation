@@ -24,6 +24,41 @@ CONSENT_VERSION = "2026-10-19-v1"
 RETENTION_UNTIL = "2026-12-07"
 LOCAL_TZ = ZoneInfo("Asia/Barnaul")
 
+AGENTS = {
+    "22": "Алексеева Инна",
+    "193": "Георгиева Ольга",
+    "603": "Гехт Евгений",
+    "34": "Гольцова Евгения",
+    "40": "Горбунов Александр",
+    "7": "Еремин Роман",
+    "606": "Ермина Лариса",
+    "582": "Ефимов Александр",
+    "42": "Золотарева Анастасия",
+    "599": "Кандрашина Наталья",
+    "30": "Карпочев Игорь",
+    "13": "Кириллова Виктория",
+    "569": "Климова Елена",
+    "596": "Ковылина Екатерина",
+    "585": "Козка Лилия",
+    "593": "Козырева Дарья",
+    "305": "Колесникова Евгения",
+    "19": "Коломеец Светлана",
+    "88": "Коновалова Анна",
+    "586": "Кононов Данил",
+    "570": "Михайлин Андрей",
+    "99": "Назарова Светлана",
+    "592": "Напреенков Илья",
+    "590": "Петрова Веорика",
+    "36": "Погудина Ирина",
+    "52": "Погудина Марина",
+    "131": "Подъяпольский Роман",
+    "608": "Тимошенко Оксана",
+    "129": "Усольцева Александра",
+    "591": "Харитонов Никита",
+    "21": "Шаргородская Наталья",
+    "577": "Шеремет Даниил",
+}
+
 
 def collection_open():
     return COLLECTION_ENABLED and datetime.now(LOCAL_TZ).date() <= date.fromisoformat(RETENTION_UNTIL)
@@ -46,11 +81,17 @@ def connect():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         phone TEXT NOT NULL, created_at TEXT NOT NULL,
         consent_version TEXT NOT NULL, retention_until TEXT NOT NULL,
-        consent_sha256 TEXT NOT NULL DEFAULT ''
+        consent_sha256 TEXT NOT NULL DEFAULT '',
+        agent_id TEXT NOT NULL DEFAULT '',
+        agent_name TEXT NOT NULL DEFAULT ''
     )""")
     columns = {row[1] for row in connection.execute("PRAGMA table_info(invitations)")}
     if "consent_sha256" not in columns:
         connection.execute("ALTER TABLE invitations ADD COLUMN consent_sha256 TEXT NOT NULL DEFAULT ''")
+    if "agent_id" not in columns:
+        connection.execute("ALTER TABLE invitations ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''")
+    if "agent_name" not in columns:
+        connection.execute("ALTER TABLE invitations ADD COLUMN agent_name TEXT NOT NULL DEFAULT ''")
     return connection
 
 
@@ -83,13 +124,20 @@ small{color:#666}.notice{background:#fff5e9;padding:12px;border-radius:8px}
 
 
 @app.get("/invite/", response_class=HTMLResponse)
-def invite():
+def invite(request: Request):
     purge_expired()
+    agent_id = request.query_params.get("agent_id", "")
+    if agent_id not in AGENTS:
+        agent_id = ""
     if not collection_open():
         return page('<p class="notice">Тестовая страница: сбор телефонов выключен.</p>'
             '<a class="action" href="' + escape(NETHOUSE_URL, quote=True)
             + '">Перейти к регистрации</a>')
-    return page("""<form method="post" action="/invite/register">
+    agent_field = (
+        '<input type="hidden" name="agent_id" value="' + escape(agent_id, quote=True) + '">'
+        if agent_id else ""
+    )
+    return page("""<form method="post" action="/invite/register">""" + agent_field + """
 <label for="phone">Ваш номер телефона</label>
 <input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel"
 placeholder="+7 (999) 999-99-99" required minlength="10" maxlength="24">
@@ -174,6 +222,13 @@ async def register(request: Request):
         return HTMLResponse("Слишком большой запрос", status_code=413)
     form = parse_qs(raw.decode("utf-8", errors="replace"), keep_blank_values=True)
     phone_values, consent_values = form.get("phone", []), form.get("consent", [])
+    agent_values = form.get("agent_id", [])
+    if len(agent_values) > 1:
+        return HTMLResponse("Неверная ссылка приглашения", status_code=422)
+    agent_id = agent_values[0] if agent_values else ""
+    if agent_id not in AGENTS:
+        agent_id = ""
+    agent_name = AGENTS.get(agent_id, "")
     if len(phone_values) != 1 or len(consent_values) != 1 or consent_values[0] != "yes":
         return HTMLResponse("Необходимо указать телефон и согласие", status_code=422)
     digits = re.sub(r"\D", "", phone_values[0])
@@ -192,10 +247,10 @@ async def register(request: Request):
         ).fetchone()
         if not duplicate:
             db.execute(
-                "INSERT INTO invitations (phone,created_at,consent_version,retention_until,consent_sha256)"
-                " VALUES (?,?,?,?,?)",
+                "INSERT INTO invitations (phone,created_at,consent_version,retention_until,consent_sha256,agent_id,agent_name)"
+                " VALUES (?,?,?,?,?,?,?)",
                 ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL,
-                 hashlib.sha256(consent().body).hexdigest()),
+                 hashlib.sha256(consent().body).hexdigest(), agent_id, agent_name),
             )
     return RedirectResponse(NETHOUSE_URL, status_code=303)
 
@@ -217,9 +272,16 @@ def admin_contacts(request: Request):
     else:
         with closing(connect()) as db:
             contacts = [
-                {"id": row[0], "phone": row[1], "created_at": row[2]}
+                {
+                    "id": row[0],
+                    "phone": row[1],
+                    "created_at": row[2],
+                    "agent_id": row[3] or None,
+                    "agent_name": row[4] or None,
+                }
                 for row in db.execute(
-                    "SELECT id, phone, created_at FROM invitations ORDER BY id DESC"
+                    "SELECT id, phone, created_at, agent_id, agent_name "
+                    "FROM invitations ORDER BY id DESC"
                 ).fetchall()
             ]
     return JSONResponse({"count": len(contacts), "contacts": contacts},
