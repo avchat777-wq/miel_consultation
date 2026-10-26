@@ -193,6 +193,34 @@ class InviteFlowTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(row, ("", ""))
 
+    def test_short_sms_link_marks_source(self):
+        import sqlite3
+        token = "d" * 40
+        with patch.object(self.mod, "COLLECTION_ENABLED", True):
+            short = self.client.get("/s", follow_redirects=False)
+            self.assertEqual(short.status_code, 302)
+            self.assertEqual(short.headers["location"], "/invite/?source=sms_robot")
+            page = self.client.get(short.headers["location"])
+            self.assertIn('name="source" value="sms_robot"', page.text)
+            response = self.client.post("/invite/register", data={
+                "phone": "+79990000000",
+                "consent": "yes",
+                "source": "sms_robot",
+            }, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        with closing(sqlite3.connect(str(Path(self.tmp.name) / "test.sqlite3"))) as db:
+            row = db.execute(
+                "SELECT source,agent_id,agent_name FROM invitations"
+            ).fetchone()
+        self.assertEqual(row, ("sms_robot", "", ""))
+        with patch.dict(os.environ, {"EVENT_INVITE_ADMIN_TOKEN": token}):
+            report = self.client.get(
+                "/invite/admin/contacts",
+                headers={"X-Invite-Admin-Token": token},
+            )
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.json()["contacts"][0]["source"], "sms_robot")
+
     def test_existing_sqlite_schema_migrates_without_losing_rows(self):
         import sqlite3
         db_path = str(Path(self.tmp.name) / "test.sqlite3")
@@ -209,9 +237,9 @@ class InviteFlowTests(unittest.TestCase):
             )
         with closing(self.mod.connect()) as db:
             row = db.execute(
-                "SELECT phone,consent_sha256,agent_id,agent_name FROM invitations"
+                "SELECT phone,consent_sha256,agent_id,agent_name,source FROM invitations"
             ).fetchone()
-        self.assertEqual(row, ("+79990000000", "", "", ""))
+        self.assertEqual(row, ("+79990000000", "", "", "", ""))
 
 
 
