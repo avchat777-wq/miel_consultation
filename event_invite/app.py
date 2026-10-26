@@ -83,7 +83,8 @@ def connect():
         consent_version TEXT NOT NULL, retention_until TEXT NOT NULL,
         consent_sha256 TEXT NOT NULL DEFAULT '',
         agent_id TEXT NOT NULL DEFAULT '',
-        agent_name TEXT NOT NULL DEFAULT ''
+        agent_name TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT ''
     )""")
     columns = {row[1] for row in connection.execute("PRAGMA table_info(invitations)")}
     if "consent_sha256" not in columns:
@@ -92,6 +93,8 @@ def connect():
         connection.execute("ALTER TABLE invitations ADD COLUMN agent_id TEXT NOT NULL DEFAULT ''")
     if "agent_name" not in columns:
         connection.execute("ALTER TABLE invitations ADD COLUMN agent_name TEXT NOT NULL DEFAULT ''")
+    if "source" not in columns:
+        connection.execute("ALTER TABLE invitations ADD COLUMN source TEXT NOT NULL DEFAULT ''")
     return connection
 
 
@@ -123,12 +126,20 @@ small{color:#666}.notice{background:#fff5e9;padding:12px;border-radius:8px}
 <p>Приглашение от агентства недвижимости МИЭЛЬ</p>""" + inner + "</main></body></html>")
 
 
+@app.get("/s")
+def sms_invite():
+    return RedirectResponse("/invite/?source=sms_robot", status_code=302)
+
+
 @app.get("/invite/", response_class=HTMLResponse)
 def invite(request: Request):
     purge_expired()
     agent_id = request.query_params.get("agent_id", "")
     if agent_id not in AGENTS:
         agent_id = ""
+    source = request.query_params.get("source", "")
+    if source != "sms_robot":
+        source = ""
     if not collection_open():
         return page('<p class="notice">Тестовая страница: сбор телефонов выключен.</p>'
             '<a class="action" href="' + escape(NETHOUSE_URL, quote=True)
@@ -137,7 +148,11 @@ def invite(request: Request):
         '<input type="hidden" name="agent_id" value="' + escape(agent_id, quote=True) + '">'
         if agent_id else ""
     )
-    return page("""<form method="post" action="/invite/register">""" + agent_field + """
+    source_field = (
+        '<input type="hidden" name="source" value="sms_robot">'
+        if source == "sms_robot" else ""
+    )
+    return page("""<form method="post" action="/invite/register">""" + agent_field + source_field + """
 <label for="phone">Ваш номер телефона</label>
 <input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel"
 placeholder="+7 (999) 999-99-99" required minlength="10" maxlength="24">
@@ -223,6 +238,12 @@ async def register(request: Request):
     form = parse_qs(raw.decode("utf-8", errors="replace"), keep_blank_values=True)
     phone_values, consent_values = form.get("phone", []), form.get("consent", [])
     agent_values = form.get("agent_id", [])
+    source_values = form.get("source", [])
+    if len(source_values) > 1:
+        return HTMLResponse("Неверный источник приглашения", status_code=422)
+    source = source_values[0] if source_values else ""
+    if source != "sms_robot":
+        source = ""
     if len(agent_values) > 1:
         return HTMLResponse("Неверная ссылка приглашения", status_code=422)
     agent_id = agent_values[0] if agent_values else ""
@@ -247,10 +268,10 @@ async def register(request: Request):
         ).fetchone()
         if not duplicate:
             db.execute(
-                "INSERT INTO invitations (phone,created_at,consent_version,retention_until,consent_sha256,agent_id,agent_name)"
-                " VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO invitations (phone,created_at,consent_version,retention_until,consent_sha256,agent_id,agent_name,source)"
+                " VALUES (?,?,?,?,?,?,?,?)",
                 ("+" + digits, now.isoformat(), CONSENT_VERSION, RETENTION_UNTIL,
-                 hashlib.sha256(consent().body).hexdigest(), agent_id, agent_name),
+                 hashlib.sha256(consent().body).hexdigest(), agent_id, agent_name, source),
             )
     return RedirectResponse(NETHOUSE_URL, status_code=303)
 
@@ -278,9 +299,10 @@ def admin_contacts(request: Request):
                     "created_at": row[2],
                     "agent_id": row[3] or None,
                     "agent_name": row[4] or None,
+                    "source": row[5] or None,
                 }
                 for row in db.execute(
-                    "SELECT id, phone, created_at, agent_id, agent_name "
+                    "SELECT id, phone, created_at, agent_id, agent_name, source "
                     "FROM invitations ORDER BY id DESC"
                 ).fetchall()
             ]
